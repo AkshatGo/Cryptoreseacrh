@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pqbench lab — classical vs post-quantum, simulated</title>
+<meta name="description" content="A live simulation of an IoT device → gateway → chain pipeline using classical and post-quantum cryptography. Based on the pqbench benchmark harness.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23070c15'/%3E%3Ctext x='32' y='42' font-family='monospace' font-size='26' font-weight='700' fill='%234de2ff' text-anchor='middle'%3EPQ%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="bg-grid" aria-hidden="true"></div>
+<div class="bg-glow bg-glow-a" aria-hidden="true"></div>
+<div class="bg-glow bg-glow-b" aria-hidden="true"></div>
+
+<header class="topbar">
+  <a class="brand" href="#sim" aria-label="pqbench lab home">
+    <span class="brand-mark">PQ</span>
+    <span class="brand-text">pqbench<span>lab</span></span>
+  </a>
+
+  <nav class="tabs" role="tablist" aria-label="Views">
+    <button class="tab is-active" data-view="sim" role="tab" aria-selected="true" aria-controls="view-sim">Simulator</button>
+    <button class="tab" data-view="bench" role="tab" aria-selected="false" aria-controls="view-bench">Benchmarks</button>
+    <button class="tab" data-view="method" role="tab" aria-selected="false" aria-controls="view-method">Method</button>
+  </nav>
+
+  <div class="top-status">
+    <span class="status-dot" id="top-dot"></span>
+    <span id="top-status-text">ready</span>
+  </div>
+</header>
+
+<main>
+  <!-- ============================================================ SIMULATOR -->
+  <section class="view is-active" id="view-sim" role="tabpanel" aria-label="Simulator">
+    <div class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="eyebrow-dot"></span> Layer 2 · IoT transaction pipeline</p>
+        <h1>Classical vs post-quantum,<br><span class="grad">one block at a time.</span></h1>
+        <p class="lede">Pick a key-exchange and a signature scheme. Watch a device sign 100-byte sensor readings, a gateway verify them, and the chain seal blocks — with every byte and microsecond accounted for.</p>
+        <div class="hero-chips">
+          <span class="chip"><i class="chip-dot cyan"></i>ECDH · ML-KEM</span>
+          <span class="chip"><i class="chip-dot violet"></i>ECDSA · ML-DSA · Falcon · SLH-DSA</span>
+          <span class="chip"><i class="chip-dot green"></i>AES-256-GCM channel</span>
+        </div>
+      </div>
+
+      <aside class="card control" aria-label="Run configuration">
+        <div class="card-head tight">
+          <h2>Run configuration</h2>
+          <span class="badge" id="profile-badge">reference</span>
+        </div>
+
+        <label class="field">
+          <span>Key exchange (KEM)</span>
+          <select id="kem-select"></select>
+        </label>
+
+        <label class="field">
+          <span>Signature scheme</span>
+          <select id="sig-select"></select>
+        </label>
+
+        <div class="field-row">
+          <label class="field">
+            <span>Transactions</span>
+            <select id="tx-select">
+              <option value="40">40</option>
+              <option value="120" selected>120</option>
+              <option value="240">240</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Block size</span>
+            <select id="block-select">
+              <option value="10">10 tx</option>
+              <option value="20" selected>20 tx</option>
+              <option value="40">40 tx</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="field">
+          <span>Playback speed</span>
+          <div class="segmented" id="speed-group" role="group" aria-label="Playback speed">
+            <button type="button" data-speed="1">1×</button>
+            <button type="button" data-speed="2" class="is-active">2×</button>
+            <button type="button" data-speed="4">4×</button>
+          </div>
+        </div>
+
+        <button class="btn primary run-btn" id="run-btn">
+          <span class="btn-icon" id="run-icon">▶</span>
+          <span id="run-label">Run simulation</span>
+        </button>
+
+        <p class="hint" id="config-note">Session setup and block structure update with your selection.</p>
+      </aside>
+    </div>
+
+    <section class="stats" aria-label="Projected metrics">
+      <article class="stat">
+        <span class="stat-label">Projected throughput</span>
+        <strong id="stat-throughput">—</strong>
+        <span class="stat-sub">closed-loop tx/s</span>
+      </article>
+      <article class="stat">
+        <span class="stat-label">Transaction size</span>
+        <strong id="stat-txsize">—</strong>
+        <span class="stat-sub" id="stat-txsize-sub">on the wire</span>
+      </article>
+      <article class="stat">
+        <span class="stat-label">Block size</span>
+        <strong id="stat-blocksize">—</strong>
+        <span class="stat-sub" id="stat-blocksize-sub">header + seal + tx</span>
+      </article>
+      <article class="stat">
+        <span class="stat-label">Signature share</span>
+        <strong id="stat-share">—</strong>
+        <span class="stat-sub">of block bytes</span>
+      </article>
+      <article class="stat">
+        <span class="stat-label">Device sign</span>
+        <strong id="stat-sign">—</strong>
+        <span class="stat-sub">median per tx</span>
+      </article>
+      <article class="stat">
+        <span class="stat-label">Gateway verify</span>
+        <strong id="stat-verify">—</strong>
+        <span class="stat-sub">median per tx</span>
+      </article>
+    </section>
+
+    <section class="card stage" id="stage">
+      <div class="stage-head">
+        <div>
+          <h2>Live pipeline</h2>
+          <p id="stage-sub">Idle — configure a run to begin.</p>
+        </div>
+        <div class="stage-meta">
+          <span class="pill" id="chain-pill"><i></i>chain · idle</span>
+          <span class="pill" id="session-pill"><i></i>session · —</span>
+        </div>
+      </div>
+
+      <div class="flow" id="flow">
+        <div class="node" id="node-device">
+          <div class="node-top">
+            <span class="node-icon">DEV</span>
+            <span class="node-led"></span>
+          </div>
+          <h3>Device</h3>
+          <p>sensor readings</p>
+          <div class="node-stats">
+            <span id="dev-sign">sign —</span>
+            <span id="dev-size">— B</span>
+          </div>
+        </div>
+
+        <div class="wire" id="wire-1" aria-hidden="true">
+          <div class="wire-line"></div>
+          <div class="wire-flow">
+            <span class="flow-dot"></span><span class="flow-dot"></span><span class="flow-dot"></span>
+          </div>
+          <span class="wire-label">AES-256-GCM</span>
+        </div>
+
+        <div class="node" id="node-gateway">
+          <div class="node-top">
+            <span class="node-icon alt">GW</span>
+            <span class="node-led"></span>
+          </div>
+          <h3>Gateway</h3>
+          <p>verify · pool · seal</p>
+          <div class="node-stats">
+            <span id="gw-verify">verify —</span>
+            <span id="gw-seal">seal —</span>
+          </div>
+        </div>
+
+        <div class="wire" id="wire-2" aria-hidden="true">
+          <div class="wire-line"></div>
+          <div class="wire-flow">
+            <span class="flow-dot"></span><span class="flow-dot"></span><span class="flow-dot"></span>
+          </div>
+          <span class="wire-label">sealed block</span>
+        </div>
+
+        <div class="node chain-node" id="node-chain">
+          <div class="node-top">
+            <span class="node-icon amber">⛓</span>
+            <span class="node-led"></span>
+          </div>
+          <h3>Chain</h3>
+          <p id="chain-sub">0 blocks</p>
+          <div class="node-stats">
+            <span id="chain-size">—</span>
+            <span id="chain-share">—</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="progress-wrap">
+        <div class="progress"><div class="progress-fill" id="progress-fill"></div></div>
+        <div class="progress-meta">
+          <span id="progress-label">0 / 0 tx</span>
+          <span id="sim-clock">sim clock 0.000 s</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="lower-grid">
+      <section class="card chain-panel">
+        <div class="card-head">
+          <div>
+            <h2>Sealed chain</h2>
+            <p>Authority-sealed blocks · Merkle roots · no proof-of-work</p>
+          </div>
+          <div class="btn-row">
+            <button class="btn ghost small" id="tamper-btn" disabled>Tamper test</button>
+            <button class="btn ghost small" id="export-btn" disabled>Export JSON</button>
+          </div>
+        </div>
+
+        <div class="alert bad" id="chain-alert" hidden>
+          <strong>Tamper detected.</strong>
+          <span>A payload byte was flipped. Merkle root and signature verification reject the block, so the chain is invalid.</span>
+        </div>
+
+        <div class="chain-view" id="chain-view">
+          <div class="empty">Blocks will appear here as the gateway seals them.</div>
+        </div>
+
+        <div class="inspector" id="inspector" hidden></div>
+      </section>
+
+      <section class="card log-panel">
+        <div class="card-head">
+          <h2>Event log</h2>
+          <span class="badge muted" id="log-count">0 events</span>
+        </div>
+        <div class="log" id="log" role="log" aria-live="polite">
+          <div class="log-line"><span class="log-time">sys</span><span class="log-msg muted">Simulator ready. Select a profile and run.</span></div>
+        </div>
+      </section>
+    </div>
+  </section>
+
+  <!-- =========================================================== BENCHMARKS -->
+  <section class="view" id="view-bench" role="tabpanel" aria-label="Benchmarks" hidden>
+    <div class="view-head">
+      <div>
+        <p class="eyebrow"><span class="eyebrow-dot"></span> Layer 1 · per-operation cost</p>
+        <h1>Benchmark the primitives.</h1>
+        <p class="lede">Sample key generation, signing and verification for every scheme, then compare latency and bytes on a log scale. The same method is applied to each candidate.</p>
+      </div>
+
+      <aside class="card bench-actions">
+        <div class="card-head tight">
+          <h2>Benchmark run</h2>
+          <span class="badge" id="bench-badge">not run</span>
+        </div>
+        <label class="field">
+          <span>Samples per operation</span>
+          <select id="samples-select">
+            <option value="50">50 · smoke test</option>
+            <option value="200" selected>200 · balanced</option>
+            <option value="500">500 · stable</option>
+          </select>
+        </label>
+        <button class="btn primary" id="bench-btn"><span class="btn-icon">▶</span><span id="bench-btn-label">Run benchmark</span></button>
+        <div class="bench-progress">
+          <div class="progress"><div class="progress-fill" id="bench-progress"></div></div>
+          <span id="bench-status">not run</span>
+        </div>
+      </aside>
+    </div>
+
+    <section class="stats bench-summary" aria-label="Benchmark highlights">
+      <article class="stat">
+        <span class="stat-label">Fastest signer</span>
+        <strong id="bench-fastest-sign">—</strong>
+        <span class="stat-sub" id="bench-fastest-sign-sub">all schemes</span>
+      </article>
+      <article class="stat">
+        <span class="stat-label">Fastest PQ verifier</span>
+        <strong id="bench-fastest-verify">—</strong>
+        <span class="stat-sub" id="bench-fastest-verify-sub">post-quantum only</span>
+      </article>
+      <article class="stat">
+        <span class="stat-label">Smallest PQ signature</span>
+        <strong id="bench-smallest-sig">—</strong>
+        <span class="stat-sub" id="bench-smallest-sig-sub">bytes</span>
+      </article>
+      <article class="stat">
+        <span class="stat-label">Largest signature</span>
+        <strong id="bench-largest-sig">—</strong>
+        <span class="stat-sub" id="bench-largest-sig-sub">bytes</span>
+      </article>
+    </section>
+
+    <div class="chart-grid">
+      <section class="card chart-card">
+        <div class="card-head">
+          <h2>Sign / verify latency</h2>
+          <span class="badge">log scale · ms</span>
+        </div>
+        <canvas id="chart-latency" aria-label="Bar chart of signing and verification latency"></canvas>
+      </section>
+      <section class="card chart-card">
+        <div class="card-head">
+          <h2>Key &amp; signature size</h2>
+          <span class="badge">log scale · bytes</span>
+        </div>
+        <canvas id="chart-size" aria-label="Bar chart of public key and signature sizes"></canvas>
+      </section>
+    </div>
+
+    <section class="card table-card">
+      <div class="card-head">
+        <div>
+          <h2>Signature schemes</h2>
+          <p>Median [p95] per operation · sorted by family</p>
+        </div>
+        <span class="badge" id="sig-table-badge">not run</span>
+      </div>
+      <div class="table-wrap">
+        <table id="sig-table">
+          <thead>
+            <tr>
+              <th>Scheme</th>
+              <th>Type</th>
+              <th>Keygen</th>
+              <th>Sign</th>
+              <th>Verify</th>
+              <th>Public key</th>
+              <th>Signature</th>
+              <th>Projected tx/s</th>
+              <th>Block sig share</th>
+              <th>Source</th>
+            </tr>
+          </thead>
+          <tbody id="sig-table-body">
+            <tr class="placeholder-row"><td colspan="10">Run the benchmark to populate this table.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card table-card">
+      <div class="card-head">
+        <div>
+          <h2>Key encapsulation</h2>
+          <p>Session setup cost and wire bytes</p>
+        </div>
+        <span class="badge" id="kem-table-badge">not run</span>
+      </div>
+      <div class="table-wrap">
+        <table id="kem-table">
+          <thead>
+            <tr>
+              <th>Scheme</th>
+              <th>Type</th>
+              <th>Keygen</th>
+              <th>Encaps</th>
+              <th>Decaps</th>
+              <th>Public key</th>
+              <th>Ciphertext</th>
+              <th>Shared secret</th>
+              <th>Handshake bytes (pk + ct)</th>
+            </tr>
+          </thead>
+          <tbody id="kem-table-body">
+            <tr class="placeholder-row"><td colspan="9">Run the benchmark to populate this table.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <p class="footnote">
+      <strong>Provenance.</strong> ECDSA-P256 and ECDH-P256 use measured medians from <code>results/primitives_raw.csv</code>
+      (n = 1000 per operation). Post-quantum figures are a representative liboqs/x86-64 reference profile, not measurements
+      taken on this machine. This page simulates the harness; it does not run native crypto in the browser.
+    </p>
+  </section>
+
+  <!-- =============================================================== METHOD -->
+  <section class="view" id="view-method" role="tabpanel" aria-label="Method" hidden>
+    <div class="view-head method-head">
+      <div>
+        <p class="eyebrow"><span class="eyebrow-dot"></span> Method · cost model &amp; provenance</p>
+        <h1>What the numbers mean.</h1>
+        <p class="lede">The simulator is a transparent cost model built on the same pipeline the benchmark harness measures. Every displayed byte and timestamp comes from a formula or a recorded sample — nothing is hidden.</p>
+      </div>
+    </div>
+
+    <div class="method-grid">
+      <section class="card method-card">
+        <span class="step-num">01</span>
+        <h2>Handshake</h2>
+        <p>The gateway runs KEM key generation and publishes its public key. The device encapsulates a shared secret and opens an AES-256-GCM channel. The session footprint is the KEM public key + ciphertext + the device signature public key.</p>
+        <code>setup B = kem.pk + kem.ct + sig.pk</code>
+      </section>
+      <section class="card method-card">
+        <span class="step-num">02</span>
+        <h2>Transaction</h2>
+        <p>Each 100-byte reading is signed by the device and encrypted. The gateway verifies the signature and acknowledges. Closed-loop throughput is therefore dominated by one sign, one verify, the AEAD work and the local round trip.</p>
+        <code>tx B = 100 + 2 + sig B</code>
+        <code>t/tx = sign + verify + 0.27 ms overhead</code>
+      </section>
+      <section class="card method-card">
+        <span class="step-num">03</span>
+        <h2>Block seal</h2>
+        <p>Every N transactions, the gateway computes a Merkle root over the pooled transactions, builds an 84-byte header and seals the header hash with its own signature. There is no proof-of-work: this is authority-style sealing, as lightweight IoT chains use.</p>
+        <code>block B = 84 + 2 + seal + N × tx B</code>
+      </section>
+      <section class="card method-card">
+        <span class="step-num">04</span>
+        <h2>Validation</h2>
+        <p>A full chain walk checks every hash link, every Merkle root, every block seal and every transaction signature. The tamper test flips one payload byte and confirms the chain is rejected.</p>
+        <code>verify all = Σ (tx sigs) + Σ (seals)</code>
+      </section>
+    </div>
+
+    <section class="card measured-card">
+      <div class="card-head">
+        <div>
+          <h2>Measured on this machine</h2>
+          <p>Classical primitives · <code>results/primitives_raw.csv</code> · n = 1000 samples per operation</p>
+        </div>
+        <span class="badge ok">measured</span>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr><th>Primitive</th><th>Operation</th><th>Median</th><th>p95</th><th>Public key</th><th>Secret key</th><th>Output</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>ECDH-P256</td><td>keygen</td><td class="num">21.9 µs</td><td class="num">32.3 µs</td><td class="num">65 B</td><td class="num">32 B</td><td class="num">—</td></tr>
+            <tr><td>ECDH-P256</td><td>encaps</td><td class="num">111.3 µs</td><td class="num">153.1 µs</td><td class="num">65 B</td><td class="num">32 B</td><td class="num">65 B ct</td></tr>
+            <tr><td>ECDH-P256</td><td>decaps</td><td class="num">72.7 µs</td><td class="num">99.3 µs</td><td class="num">65 B</td><td class="num">32 B</td><td class="num">32 B ss</td></tr>
+            <tr><td>ECDSA-P256</td><td>keygen</td><td class="num">22.0 µs</td><td class="num">35.3 µs</td><td class="num">65 B</td><td class="num">32 B</td><td class="num">—</td></tr>
+            <tr><td>ECDSA-P256</td><td>sign</td><td class="num">27.1 µs</td><td class="num">41.1 µs</td><td class="num">65 B</td><td class="num">32 B</td><td class="num">70.9 B sig</td></tr>
+            <tr><td>ECDSA-P256</td><td>verify</td><td class="num">95.9 µs</td><td class="num">121.7 µs</td><td class="num">65 B</td><td class="num">32 B</td><td class="num">bool</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card method-note">
+      <div class="card-head">
+        <h2>Reference profile &amp; honesty notes</h2>
+        <span class="badge warn">simulated</span>
+      </div>
+      <ul class="notes">
+        <li><strong>Post-quantum values are a reference profile.</strong> This checkout contains only the ECDH/ECDSA raw results, so ML-KEM, ML-DSA, Falcon and SLH-DSA figures are representative liboqs/x86-64 numbers used to drive the simulation. They are not measured on this device.</li>
+        <li><strong>Playback is not wall-clock accurate.</strong> The animation is compressed so a run stays watchable. The statistics panel reports the model's simulated timings, which preserve the relative cost of each algorithm.</li>
+        <li><strong>Not modeled:</strong> network latency beyond a fixed 0.27 ms local round trip, peak memory, scheduler noise, and proof-of-work. The harness itself runs real TCP over loopback and real crypto; this page does not.</li>
+        <li><strong>Each scheme self-tests before timing.</strong> The harness requires a KEM round trip to agree and rejects a tampered message before recording any sample. That discipline is reflected in the simulated pipeline: a bad signature never enters the block pool.</li>
+        <li><strong>Signature sizes matter twice.</strong> A post-quantum signature is paid on every transaction and again in the block seal. The block signature-share metric makes that cost visible.</li>
+      </ul>
+    </section>
+
+    <section class="card source-card">
+      <div class="card-head">
+        <h2>Source files</h2>
+        <span class="badge muted">this repo</span>
+      </div>
+      <div class="source-grid">
+        <div><code>bench_primitives.py</code><span>per-operation timing, CSV output</span></div>
+        <div><code>pipeline.py</code><span>two-process device → gateway TCP pipeline</span></div>
+        <div><code>make_report.py</code><span>tables, claims and charts from raw data</span></div>
+        <div><code>results/primitives_raw.csv</code><span>1000 samples per classical operation</span></div>
+      </div>
+    </section>
+  </section>
+</main>
+
+<footer>
+  <span>pqbench lab · simulation of the <code>pqbench</code> harness</span>
+  <span class="footer-right">classical ✕ post-quantum · built from measured primitives</span>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

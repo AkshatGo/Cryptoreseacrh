@@ -1,0 +1,3 @@
+algorithm,family,kind,public_key_B,secret_key_B,ct_or_sig_max_B,ct_or_sig_actual_mean_B,shared_secret_B
+ECDH-P256,classical,kem,65,32,65,65,32
+ECDSA-P256,classical,sig,65,32,71,70.9,0
